@@ -95,6 +95,7 @@ resource "azurerm_container_app" "webserver" {
   name                         = "${var.prefix}-web"
   resource_group_name          = azurerm_resource_group.rg.name
   container_app_environment_id = azurerm_container_app_environment.env.id
+  revision_mode                = "Single"
 
   ingress {
     external_enabled = true
@@ -133,15 +134,15 @@ resource "azurerm_container_app" "webserver" {
     }
 
     volume {
-      name          = "dags"
-      storage_name  = azurerm_container_app_environment_storage.dags_env.name
-      storage_type  = "AzureFile"
+      name         = "dags"
+      storage_name = azurerm_container_app_environment_storage.dags_env.name
+      storage_type = "AzureFile"
     }
 
     volume {
-      name          = "logs"
-      storage_name  = azurerm_container_app_environment_storage.logs_env.name
-      storage_type  = "AzureFile"
+      name         = "logs"
+      storage_name = azurerm_container_app_environment_storage.logs_env.name
+      storage_type = "AzureFile"
     }
   }
 }
@@ -151,6 +152,7 @@ resource "azurerm_container_app" "scheduler" {
   name                         = "${var.prefix}-scheduler"
   resource_group_name          = azurerm_resource_group.rg.name
   container_app_environment_id = azurerm_container_app_environment.env.id
+  revision_mode                = "Single"
 
   template {
     container {
@@ -180,15 +182,15 @@ resource "azurerm_container_app" "scheduler" {
     }
 
     volume {
-      name          = "dags"
-      storage_name  = azurerm_container_app_environment_storage.dags_env.name
-      storage_type  = "AzureFile"
+      name         = "dags"
+      storage_name = azurerm_container_app_environment_storage.dags_env.name
+      storage_type = "AzureFile"
     }
 
     volume {
-      name          = "logs"
-      storage_name  = azurerm_container_app_environment_storage.logs_env.name
-      storage_type  = "AzureFile"
+      name         = "logs"
+      storage_name = azurerm_container_app_environment_storage.logs_env.name
+      storage_type = "AzureFile"
     }
   }
 }
@@ -198,6 +200,7 @@ resource "azurerm_container_app" "worker" {
   name                         = "${var.prefix}-worker"
   resource_group_name          = azurerm_resource_group.rg.name
   container_app_environment_id = azurerm_container_app_environment.env.id
+  revision_mode                = "Single"
 
   template {
     container {
@@ -227,15 +230,15 @@ resource "azurerm_container_app" "worker" {
     }
 
     volume {
-      name          = "dags"
-      storage_name  = azurerm_container_app_environment_storage.dags_env.name
-      storage_type  = "AzureFile"
+      name         = "dags"
+      storage_name = azurerm_container_app_environment_storage.dags_env.name
+      storage_type = "AzureFile"
     }
 
     volume {
-      name          = "logs"
-      storage_name  = azurerm_container_app_environment_storage.logs_env.name
-      storage_type  = "AzureFile"
+      name         = "logs"
+      storage_name = azurerm_container_app_environment_storage.logs_env.name
+      storage_type = "AzureFile"
     }
   }
 }
