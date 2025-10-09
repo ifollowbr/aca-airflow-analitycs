@@ -120,12 +120,29 @@ resource "azurerm_container_app" "webserver" {
           value = env.value.value
         }
       }
-      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
-      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
+
+      volume_mounts {
+        name = "dags"
+        path = "/opt/airflow/dags"
+      }
+
+      volume_mounts {
+        name = "logs"
+        path = "/opt/airflow/logs"
+      }
     }
 
-    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
-    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
+    volume {
+      name          = "dags"
+      storage_name  = azurerm_container_app_environment_storage.dags_env.name
+      storage_type  = "AzureFile"
+    }
+
+    volume {
+      name          = "logs"
+      storage_name  = azurerm_container_app_environment_storage.logs_env.name
+      storage_type  = "AzureFile"
+    }
   }
 }
 
@@ -150,12 +167,29 @@ resource "azurerm_container_app" "scheduler" {
           value = env.value.value
         }
       }
-      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
-      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
+
+      volume_mounts {
+        name = "dags"
+        path = "/opt/airflow/dags"
+      }
+
+      volume_mounts {
+        name = "logs"
+        path = "/opt/airflow/logs"
+      }
     }
 
-    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
-    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
+    volume {
+      name          = "dags"
+      storage_name  = azurerm_container_app_environment_storage.dags_env.name
+      storage_type  = "AzureFile"
+    }
+
+    volume {
+      name          = "logs"
+      storage_name  = azurerm_container_app_environment_storage.logs_env.name
+      storage_type  = "AzureFile"
+    }
   }
 }
 
@@ -180,11 +214,28 @@ resource "azurerm_container_app" "worker" {
           value = env.value.value
         }
       }
-      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
-      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
+
+      volume_mounts {
+        name = "dags"
+        path = "/opt/airflow/dags"
+      }
+
+      volume_mounts {
+        name = "logs"
+        path = "/opt/airflow/logs"
+      }
     }
 
-    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
-    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
+    volume {
+      name          = "dags"
+      storage_name  = azurerm_container_app_environment_storage.dags_env.name
+      storage_type  = "AzureFile"
+    }
+
+    volume {
+      name          = "logs"
+      storage_name  = azurerm_container_app_environment_storage.logs_env.name
+      storage_type  = "AzureFile"
+    }
   }
 }
