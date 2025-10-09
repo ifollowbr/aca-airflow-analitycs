@@ -1,78 +1,50 @@
-variable "image" {
-  type        = string
-  description = "Imagem Docker usada pelo Metabase"
-  default     = "metabase/metabase:latest"
-}
-
-variable "env_name" {
-  type        = string
-  description = "Nome do Azure Container Apps Environment"
-  default     = "env-metabase"
+variable "prefix" {
+  default = "aca-airflow"
 }
 
 variable "rg_name" {
-  type        = string
-  description = "Nome do Resource Group (já existente ou a ser criado)"
-  default     = "rg-metabase-aca"
+  default = "rg-airflow-aca"
 }
 
 variable "location" {
-  type        = string
-  description = "Região Azure (ex.: eastus)"
-  default     = "eastus"
+  default = "eastus"
 }
 
-variable "app_name" {
-  type        = string
-  description = "Nome do Azure Container App"
-  default     = "metabase-app"
+variable "env_name" {
+  default = "env-airflow"
 }
 
-# Banco de dados do Metabase
-variable "db_host" {
-  type        = string
-  description = "Host do Postgres (Flexible Server)"
+variable "airflow_image" {
+  default = "apache/airflow:2.9.2"
 }
 
-variable "db_port" {
-  type        = string
-  description = "Porta do Postgres"
-  default     = 5432
+# Postgres existente
+variable "pg_host" {
+  default = "sit-datawarehouse.postgres.database.azure.com"
 }
 
-variable "db_name" {
-  type        = string
-  description = "Nome do database do Metabase"
-  default     = "metabase"
+variable "pg_database" {
+  default = "postgres"
 }
 
-variable "db_schema" {
-  type        = string
-  description = "Schema do Metabase (public recomendado)"
-  default     = "public"
+variable "pg_port" {
+  default = 5432
 }
 
-variable "db_user" {
-  type        = string
-  description = "Usuário do Postgres (geralmente sem @servername no Flexible Server)"
+variable "pg_user" {
+  default = "ifw_datawarehouse_admin"
 }
 
-variable "db_password" {
-  type        = string
+variable "pg_password" {
+  description = "Senha do Postgres existente"
   sensitive   = true
-  description = "Senha do Postgres"
+  default     = "ty12$FD@"
 }
 
-# Criptografia do Metabase
-variable "mb_encryption_secret_key" {
-  type        = string
-  sensitive   = true
-  description = "Chave de criptografia do Metabase (32+ chars)"
+variable "fernet_key" {
+  description = "yx3uzKzxJm9W4xZQ1Z-TU5htsZV2H3pSk3s3RbTz7xA="
 }
 
-# Opcional: se vazio, usamos a URL estável do ACA (https://<app>.<region>.azurecontainerapps.io)
-variable "site_url_override" {
-  type        = string
-  description = "URL do site do Metabase. Se vazio, usa domínio fixo do ACA"
-  default     = ""
+variable "webserver_secret_key" {
+  description = "c3a1f5b8c9d4a7e0f2b9d1c3e6f7a8b4d9c2e0f3b7a6d5c1"
 }

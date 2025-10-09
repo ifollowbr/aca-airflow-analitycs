@@ -1,55 +1,50 @@
-name: Deploy Metabase to Azure Container App
+name: Deploy Airflow to Azure Container App
 
 on:
   push:
     branches: [ "main" ]
 
-# Evita duas execuções concorrentes bloquearem o tfstate
 concurrency:
-  group: metabase-aca-terraform
+  group: airflow-aca-terraform
   cancel-in-progress: true
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write     # OIDC
+      id-token: write
       contents: read
 
     env:
-      # Não pedir inputs no CI
       TF_INPUT: "false"
-
-      # Terraform backend remoto
       TF_WORKDIR: ./deployment
 
-      # Parâmetros (Caminho 1 — TF cria o Environment)
-      RG_NAME: rg-metabase-aca
+      # Configurações do ambiente
+      RG_NAME: rg-airflow-aca
       LOCATION: eastus
-      ENV_NAME: env-metabase
-      APP_NAME: metabase-app
-      # TF_VAR_image (opcional; usa default do variables.tf se não setar)
+      ENV_NAME: env-airflow
+      APP_NAME: airflow-web
 
-      # Backend remoto para state
+      # Backend remoto (ajuste conforme seu storage já existente)
       RG_TFSTATE: rg-tfstate
-      SA_TFSTATE: sttfstateifollow   # precisa existir e ser único no Azure
+      SA_TFSTATE: sttfstateifollow
       CTNR_TFSTATE: tfstate
-      TFSTATE_KEY: metabase-aca.tfstate
+      TFSTATE_KEY: airflow-aca.tfstate
 
-      # Credenciais Azure (OIDC)
+      # Credenciais Azure via OIDC
       ARM_USE_OIDC: "true"
       ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # DB + Metabase secrets
-      TF_VAR_db_host:      ${{ secrets.TF_VAR_DB_HOST }}
-      TF_VAR_db_name:      ${{ secrets.TF_VAR_DB_NAME }}
-      TF_VAR_db_user:      ${{ secrets.TF_VAR_DB_USER }}
-      TF_VAR_db_password:  ${{ secrets.TF_VAR_DB_PASSWORD }}
-      TF_VAR_db_port:      ${{ secrets.TF_VAR_DB_PORT }}
-      TF_VAR_mb_encryption_secret_key: ${{ secrets.TF_VAR_MB_ENCRYPTION_SECRET_KEY }}
-      TF_VAR_site_url_override:        ${{ secrets.TF_VAR_SITE_URL_OVERRIDE }}
+      # Variáveis do Airflow
+      TF_VAR_pg_host:      "sit-datawarehouse.postgres.database.azure.com"
+      TF_VAR_pg_database:  "postgres"
+      TF_VAR_pg_port:      "5432"
+      TF_VAR_pg_user:      "ifw_datawarehouse_admin"
+      TF_VAR_pg_password:  ${{ secrets.TF_VAR_PG_PASSWORD }}
+      TF_VAR_fernet_key:   ${{ secrets.TF_VAR_FERNET_KEY }}
+      TF_VAR_webserver_secret_key: ${{ secrets.TF_VAR_WEBSERVER_SECRET_KEY }}
 
     steps:
       - name: Checkout repository
@@ -60,13 +55,18 @@ jobs:
         with:
           terraform_version: 1.6.6
 
-      # Mapeia as variáveis "humanas" para TF_VAR_* via $GITHUB_ENV
       - name: Export TF_VAR_* (RG/location/env/app)
         run: |
           echo "TF_VAR_rg_name=$RG_NAME" >> $GITHUB_ENV
           echo "TF_VAR_location=$LOCATION" >> $GITHUB_ENV
           echo "TF_VAR_env_name=$ENV_NAME" >> $GITHUB_ENV
-          echo "TF_VAR_app_name=$APP_NAME" >> $GITHUB_ENV
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}          
 
       - name: Terraform Init
         run: |
@@ -76,53 +76,26 @@ jobs:
             -backend-config="container_name=$CTNR_TFSTATE" \
             -backend-config="key=$TFSTATE_KEY"
 
-      # Idempotência: importa RG se já existir
       - name: Import Resource Group if exists
         run: |
           set -e
-          if terraform -chdir=$TF_WORKDIR state show azurerm_resource_group.rg >/dev/null 2>&1; then
-            echo "RG já no state."
-          else
-            terraform -chdir=$TF_WORKDIR import \
-              azurerm_resource_group.rg \
-              "/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$RG_NAME" || true
-          fi
+          terraform -chdir=$TF_WORKDIR import \
+            azurerm_resource_group.rg \
+            "/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$RG_NAME" || true
 
-      # Idempotência: importa Log Analytics Workspace se já existir
       - name: Import Log Analytics Workspace if exists
         run: |
           set -e
-          if terraform -chdir=$TF_WORKDIR state show azurerm_log_analytics_workspace.law >/dev/null 2>&1; then
-            echo "LAW já no state."
-          else
-            terraform -chdir=$TF_WORKDIR import \
-              azurerm_log_analytics_workspace.law \
-              "/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$RG_NAME/providers/Microsoft.OperationalInsights/workspaces/law-$ENV_NAME" || true
-          fi
+          terraform -chdir=$TF_WORKDIR import \
+            azurerm_log_analytics_workspace.law \
+            "/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$RG_NAME/providers/Microsoft.OperationalInsights/workspaces/law-$ENV_NAME" || true
 
-      # Idempotência: importa o ACA Environment se já existir
       - name: Import ACA Environment if exists
         run: |
           set -e
-          if terraform -chdir=$TF_WORKDIR state show azurerm_container_app_environment.env >/dev/null 2>&1; then
-            echo "ACA Environment já no state."
-          else
-            terraform -chdir=$TF_WORKDIR import \
-              azurerm_container_app_environment.env \
-              "/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$RG_NAME/providers/Microsoft.App/managedEnvironments/$ENV_NAME" || true
-          fi
-
-      # Idempotência: importa o Container App se já existir
-      - name: Import Container App if exists
-        run: |
-          set -e
-          if terraform -chdir=$TF_WORKDIR state show azurerm_container_app.metabase >/dev/null 2>&1; then
-            echo "Container App já no state."
-          else
-            terraform -chdir=$TF_WORKDIR import \
-              azurerm_container_app.metabase \
-              "/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$RG_NAME/providers/Microsoft.App/containerApps/$APP_NAME" || true
-          fi
+          terraform -chdir=$TF_WORKDIR import \
+            azurerm_container_app_environment.env \
+            "/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$RG_NAME/providers/Microsoft.App/managedEnvironments/$ENV_NAME" || true
 
       - name: Terraform Validate
         run: terraform -chdir=$TF_WORKDIR validate

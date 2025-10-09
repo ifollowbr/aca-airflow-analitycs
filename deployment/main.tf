@@ -4,7 +4,7 @@ resource "azurerm_resource_group" "rg" {
   location = var.location
 }
 
-# Log Analytics (necessário para ACA)
+# Log Analytics
 resource "azurerm_log_analytics_workspace" "law" {
   name                = "law-${var.env_name}"
   location            = azurerm_resource_group.rg.location
@@ -13,183 +13,178 @@ resource "azurerm_log_analytics_workspace" "law" {
   retention_in_days   = 30
 }
 
-# Ambiente do Azure Container Apps (criado por Terraform)
+# Environment do ACA
 resource "azurerm_container_app_environment" "env" {
   name                       = var.env_name
   location                   = azurerm_resource_group.rg.location
   resource_group_name        = azurerm_resource_group.rg.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.law.id
-
-  lifecycle {
-    # impede qualquer tentativa de destruir o Environment
-    prevent_destroy = true
-
-    # opcional: evita replace por pequenas mudanças fora do seu controle
-    ignore_changes = [
-      log_analytics_workspace_id
-    ]
-  }
 }
 
-# Aplicação Metabase no ACA
-resource "azurerm_container_app" "metabase" {
-  name                = var.app_name
-  resource_group_name = azurerm_resource_group.rg.name
+# Storage Account para DAGs e Logs
+resource "azurerm_storage_account" "sa" {
+  name                     = lower(replace("${var.prefix}sa", "-", ""))
+  resource_group_name      = azurerm_resource_group.rg.name
+  location                 = azurerm_resource_group.rg.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+}
 
-  # Usa o Environment criado acima (caminho 1)
+resource "azurerm_storage_share" "dags" {
+  name                 = "dags"
+  storage_account_name = azurerm_storage_account.sa.name
+  quota                = 50
+}
+
+resource "azurerm_storage_share" "logs" {
+  name                 = "logs"
+  storage_account_name = azurerm_storage_account.sa.name
+  quota                = 100
+}
+
+resource "azurerm_container_app_environment_storage" "dags_env" {
+  name                         = "dags"
+  container_app_environment_id = azurerm_container_app_environment.env.id
+  account_name                 = azurerm_storage_account.sa.name
+  share_name                   = azurerm_storage_share.dags.name
+  access_key                   = azurerm_storage_account.sa.primary_access_key
+  access_mode                  = "ReadWrite"
+}
+
+resource "azurerm_container_app_environment_storage" "logs_env" {
+  name                         = "logs"
+  container_app_environment_id = azurerm_container_app_environment.env.id
+  account_name                 = azurerm_storage_account.sa.name
+  share_name                   = azurerm_storage_share.logs.name
+  access_key                   = azurerm_storage_account.sa.primary_access_key
+  access_mode                  = "ReadWrite"
+}
+
+# Redis Cache (para CeleryExecutor)
+resource "azurerm_redis_cache" "redis" {
+  name                = "${var.prefix}-redis"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  capacity            = 1
+  family              = "C"
+  sku_name            = "Basic"
+  minimum_tls_version = "1.2"
+  enable_non_ssl_port = false
+}
+
+# Strings de conexão
+locals {
+  sql_alchemy_conn = "postgresql+psycopg2://${var.pg_user}:${urlencode(var.pg_password)}@${var.pg_host}:${var.pg_port}/${var.pg_database}"
+  redis_url        = "rediss://:${azurerm_redis_cache.redis.primary_access_key}@${azurerm_redis_cache.redis.hostname}:6380/0"
+}
+
+# Envs comuns do Airflow
+locals {
+  common_envs = [
+    { name = "AIRFLOW__CORE__EXECUTOR", value = "CeleryExecutor" },
+    { name = "AIRFLOW__CORE__SQL_ALCHEMY_CONN", value = local.sql_alchemy_conn },
+    { name = "AIRFLOW__CELERY__BROKER_URL", value = local.redis_url },
+    { name = "AIRFLOW__CELERY__RESULT_BACKEND", value = local.sql_alchemy_conn },
+    { name = "AIRFLOW__CORE__FERNET_KEY", value = var.fernet_key },
+    { name = "AIRFLOW__WEBSERVER__SECRET_KEY", value = var.webserver_secret_key }
+  ]
+}
+
+# Webserver
+resource "azurerm_container_app" "webserver" {
+  name                         = "${var.prefix}-web"
+  resource_group_name          = azurerm_resource_group.rg.name
   container_app_environment_id = azurerm_container_app_environment.env.id
 
-  revision_mode = "Single"
-
-  # Ingress público (porta 3000 do Metabase)
   ingress {
     external_enabled = true
-    target_port      = 3000
-    transport        = "auto"
-
+    target_port      = 8080
     traffic_weight {
       latest_revision = true
       percentage      = 100
     }
   }
 
-  # —— Segredos (todos valores como secrets) ——
-  secret {
-    name  = "db-host"
-    value = var.db_host
-  }
+  template {
+    container {
+      name   = "airflow-webserver"
+      image  = var.airflow_image
+      cpu    = 1.0
+      memory = "2Gi"
+      args   = ["bash", "-lc", "airflow db upgrade && airflow webserver"]
 
-  secret {
-    name  = "db-port"
-    value = tostring(var.db_port)
-  }
+      dynamic "env" {
+        for_each = { for e in local.common_envs : e.name => e }
+        content {
+          name  = env.key
+          value = env.value.value
+        }
+      }
+      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
+      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
+    }
 
-  secret {
-    name  = "db-name"
-    value = var.db_name
+    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
+    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
   }
+}
 
-  secret {
-    name  = "db-schema"
-    value = var.db_schema
-  }
-
-  secret {
-    name  = "db-user"
-    value = var.db_user
-  }
-
-  secret {
-    name  = "db-password"
-    value = var.db_password
-  }
-
-  secret {
-    name  = "mb-encryption-key"
-    value = var.mb_encryption_secret_key
-  }
-
-  secret {
-    name  = "db-ssl"
-    value = "true"
-  }
-
-  secret {
-    name  = "db-ssl-mode"
-    value = "require"
-  }
-
-  secret {
-    name  = "db-type"
-    value = "postgres"
-  }
-
-  # URL estável (não depende de revision/hash)
-  secret {
-    name  = "site-url"
-    value = coalesce(
-      var.site_url_override,
-      format("https://%s.%s.azurecontainerapps.io", var.app_name, var.location)
-    )
-  }
+# Scheduler
+resource "azurerm_container_app" "scheduler" {
+  name                         = "${var.prefix}-scheduler"
+  resource_group_name          = azurerm_resource_group.rg.name
+  container_app_environment_id = azurerm_container_app_environment.env.id
 
   template {
-    min_replicas = 1
-    max_replicas = 10
-
-    http_scale_rule {
-      name                = "http-scaler"
-      concurrent_requests = 10
-    }
-
     container {
-      name   = "metabase"
-      image  = var.image
-      cpu    = 2.0
-      memory = "4Gi"
+      name   = "airflow-scheduler"
+      image  = var.airflow_image
+      cpu    = 1.0
+      memory = "2Gi"
+      args   = ["bash", "-lc", "airflow db upgrade && airflow scheduler"]
 
-      # —— Todos os envs via secret_name ——
-      env {
-        name        = "MB_DB_TYPE"
-        secret_name = "db-type"
+      dynamic "env" {
+        for_each = { for e in local.common_envs : e.name => e }
+        content {
+          name  = env.key
+          value = env.value.value
+        }
       }
-      env {
-        name        = "MB_DB_HOST"
-        secret_name = "db-host"
-      }
-      env {
-        name        = "MB_DB_PORT"
-        secret_name = "db-port"
-      }
-      env {
-        name        = "MB_DB_DBNAME"
-        secret_name = "db-name"
-      }
-      env {
-        name        = "MB_DB_SCHEMA"
-        secret_name = "db-schema"
-      }
-      env {
-        name        = "MB_DB_USER"
-        secret_name = "db-user"
-      }
-      env {
-        name        = "MB_DB_PASS"
-        secret_name = "db-password"
-      }
-      env {
-        name        = "MB_ENCRYPTION_SECRET_KEY"
-        secret_name = "mb-encryption-key"
-      }
-      env {
-        name        = "MB_DB_SSL"
-        secret_name = "db-ssl"
-      }
-      env {
-        name        = "MB_DB_SSL_MODE"
-        secret_name = "db-ssl-mode"
-      }
-      env {
-        name        = "MB_SITE_URL"
-        secret_name = "site-url"
-      }
-
-      # —— Probes válidos (sem 'interval') ——
-      liveness_probe {
-        transport = "HTTP"
-        port      = 3000
-        path      = "/api/health"
-      }
-
-      readiness_probe {
-        transport = "HTTP"
-        port      = 3000
-        path      = "/api/health"
-      }
+      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
+      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
     }
-  }
 
-  identity {
-    type = "SystemAssigned"
+    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
+    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
+  }
+}
+
+# Worker
+resource "azurerm_container_app" "worker" {
+  name                         = "${var.prefix}-worker"
+  resource_group_name          = azurerm_resource_group.rg.name
+  container_app_environment_id = azurerm_container_app_environment.env.id
+
+  template {
+    container {
+      name   = "airflow-worker"
+      image  = var.airflow_image
+      cpu    = 1.0
+      memory = "2Gi"
+      args   = ["bash", "-lc", "airflow celery worker"]
+
+      dynamic "env" {
+        for_each = { for e in local.common_envs : e.name => e }
+        content {
+          name  = env.key
+          value = env.value.value
+        }
+      }
+      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
+      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
+    }
+
+    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
+    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
   }
 }
