@@ -18,7 +18,7 @@ variable "airflow_image" {
   default = "apache/airflow:2.9.2"
 }
 
-# Postgres existente
+# Banco de dados existente (novo banco "airflow" na mesma instância)
 variable "pg_host" {
   default = "sit-datawarehouse.postgres.database.azure.com"
 }
@@ -42,9 +42,11 @@ variable "pg_password" {
 }
 
 variable "fernet_key" {
-  description = "yx3uzKzxJm9W4xZQ1Z-TU5htsZV2H3pSk3s3RbTz7xA="
+  description = "Chave Fernet do Airflow"
+  default     = "yx3uzKzxJm9W4xZQ1Z-TU5htsZV2H3pSk3s3RbTz7xA="
 }
 
 variable "webserver_secret_key" {
-  description = "c3a1f5b8c9d4a7e0f2b9d1c3e6f7a8b4d9c2e0f3b7a6d5c1"
+  description = "Chave secreta do Webserver"
+  default     = "c3a1f5b8c9d4a7e0f2b9d1c3e6f7a8b4d9c2e0f3b7a6d5c1"
 }

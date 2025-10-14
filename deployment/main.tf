@@ -1,10 +1,14 @@
+# ==========================
 # Resource Group
+# ==========================
 resource "azurerm_resource_group" "rg" {
   name     = var.rg_name
   location = var.location
 }
 
+# ==========================
 # Log Analytics
+# ==========================
 resource "azurerm_log_analytics_workspace" "law" {
   name                = "law-${var.env_name}"
   location            = azurerm_resource_group.rg.location
@@ -13,7 +17,9 @@ resource "azurerm_log_analytics_workspace" "law" {
   retention_in_days   = 30
 }
 
-# Environment do ACA
+# ==========================
+# ACA Environment
+# ==========================
 resource "azurerm_container_app_environment" "env" {
   name                       = var.env_name
   location                   = azurerm_resource_group.rg.location
@@ -21,7 +27,9 @@ resource "azurerm_container_app_environment" "env" {
   log_analytics_workspace_id = azurerm_log_analytics_workspace.law.id
 }
 
-# Storage Account para DAGs e Logs
+# ==========================
+# Storage Account (DAGs e Logs)
+# ==========================
 resource "azurerm_storage_account" "sa" {
   name                     = lower(replace("${var.prefix}sa", "-", ""))
   resource_group_name      = azurerm_resource_group.rg.name
@@ -60,7 +68,9 @@ resource "azurerm_container_app_environment_storage" "logs_env" {
   access_mode                  = "ReadWrite"
 }
 
+# ==========================
 # Redis Cache (para CeleryExecutor)
+# ==========================
 resource "azurerm_redis_cache" "redis" {
   name                = "${var.prefix}-redis"
   location            = azurerm_resource_group.rg.location
@@ -72,17 +82,22 @@ resource "azurerm_redis_cache" "redis" {
   enable_non_ssl_port = false
 }
 
-# Strings de conexão
+# ==========================
+# Strings de Conexão
+# ==========================
 locals {
-  sql_alchemy_conn = "postgresql+psycopg2://${var.pg_user}:${urlencode(var.pg_password)}@${var.pg_host}:${var.pg_port}/${var.pg_database}?options=-csearch_path=airflow"
+  sql_alchemy_conn = "postgresql+psycopg2://${var.pg_user}:${urlencode(var.pg_password)}@${var.pg_host}:${var.pg_port}/${var.pg_database}"
   redis_url        = "rediss://:${azurerm_redis_cache.redis.primary_access_key}@${azurerm_redis_cache.redis.hostname}:6380/0"
 }
 
-# Envs comuns do Airflow
+# ==========================
+# Variáveis de Ambiente Comuns
+# ==========================
 locals {
   common_envs = [
     { name = "AIRFLOW__CORE__EXECUTOR", value = "CeleryExecutor" },
     { name = "AIRFLOW__CORE__SQL_ALCHEMY_CONN", value = local.sql_alchemy_conn },
+    { name = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN", value = local.sql_alchemy_conn },
     { name = "AIRFLOW__CELERY__BROKER_URL", value = local.redis_url },
     { name = "AIRFLOW__CELERY__RESULT_BACKEND", value = local.sql_alchemy_conn },
     { name = "AIRFLOW__CORE__FERNET_KEY", value = var.fernet_key },
@@ -90,7 +105,9 @@ locals {
   ]
 }
 
-# Webserver
+# ==========================
+# Airflow Webserver
+# ==========================
 resource "azurerm_container_app" "webserver" {
   name                         = "${var.prefix}-web"
   resource_group_name          = azurerm_resource_group.rg.name
@@ -112,7 +129,7 @@ resource "azurerm_container_app" "webserver" {
       image  = var.airflow_image
       cpu    = 1.0
       memory = "2Gi"
-      args   = ["bash", "-lc", "airflow db upgrade && airflow webserver"]
+      args   = ["bash", "-lc", "airflow db migrate && airflow webserver"]
 
       dynamic "env" {
         for_each = { for e in local.common_envs : e.name => e }
@@ -147,7 +164,9 @@ resource "azurerm_container_app" "webserver" {
   }
 }
 
-# Scheduler
+# ==========================
+# Airflow Scheduler
+# ==========================
 resource "azurerm_container_app" "scheduler" {
   name                         = "${var.prefix}-scheduler"
   resource_group_name          = azurerm_resource_group.rg.name
@@ -160,7 +179,7 @@ resource "azurerm_container_app" "scheduler" {
       image  = var.airflow_image
       cpu    = 1.0
       memory = "2Gi"
-      args   = ["bash", "-lc", "airflow db upgrade && airflow scheduler"]
+      args   = ["bash", "-lc", "airflow db migrate && airflow scheduler"]
 
       dynamic "env" {
         for_each = { for e in local.common_envs : e.name => e }
@@ -195,7 +214,9 @@ resource "azurerm_container_app" "scheduler" {
   }
 }
 
-# Worker
+# ==========================
+# Airflow Worker
+# ==========================
 resource "azurerm_container_app" "worker" {
   name                         = "${var.prefix}-worker"
   resource_group_name          = azurerm_resource_group.rg.name
