@@ -74,7 +74,7 @@ resource "azurerm_redis_cache" "redis" {
 
 # Strings de conexão
 locals {
-  sql_alchemy_conn = "postgresql+psycopg2://${var.pg_user}:${urlencode(var.pg_password)}@${var.pg_host}:${var.pg_port}/${var.pg_database}"
+  sql_alchemy_conn = "postgresql+psycopg2://${var.pg_user}:${urlencode(var.pg_password)}@${var.pg_host}:${var.pg_port}/${var.pg_database}?options=-csearch_path=airflow"
   redis_url        = "rediss://:${azurerm_redis_cache.redis.primary_access_key}@${azurerm_redis_cache.redis.hostname}:6380/0"
 }
 

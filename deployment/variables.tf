@@ -24,7 +24,7 @@ variable "pg_host" {
 }
 
 variable "pg_database" {
-  default = "postgres"
+  default = "airflow"
 }
 
 variable "pg_port" {
