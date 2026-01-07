@@ -211,6 +211,8 @@ resource "azurerm_container_app" "scheduler" {
   }
 
   template {
+    min_replicas = "${var.min_replicas}"
+    max_replicas = "${var.max_replicas}"    
     container {
       name   = "airflow-scheduler"
       image  = var.airflow_image
@@ -271,9 +273,8 @@ resource "azurerm_container_app" "worker" {
   }
 
   template {
-    min_replicas = 1
-    max_replicas = 1
-
+    min_replicas = "${var.min_replicas}"
+    max_replicas = "${var.max_replicas}"    
     container {
       name   = "airflow-worker"
       image  = var.airflow_image

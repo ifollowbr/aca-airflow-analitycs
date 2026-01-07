@@ -50,3 +50,11 @@ variable "webserver_secret_key" {
   description = "Chave secreta do Webserver"
   default     = "c3a1f5b8c9d4a7e0f2b9d1c3e6f7a8b4d9c2e0f3b7a6d5c1"
 }
+
+variable "min_replicas" {
+  default = 1
+}
+
+variable "max_replicas" {
+  default = 3
+}
