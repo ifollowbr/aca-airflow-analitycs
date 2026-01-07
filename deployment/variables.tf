@@ -15,7 +15,7 @@ variable "env_name" {
 }
 
 variable "airflow_image" {
-  default = "apache/airflow:2.9.2"
+  default = "apache/airflow:2.8.4-python3.12"
 }
 
 # Banco de dados existente (novo banco "airflow" na mesma instância)
