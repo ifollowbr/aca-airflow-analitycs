@@ -120,7 +120,9 @@ resource "azurerm_container_app" "webserver" {
   container_app_environment_id = azurerm_container_app_environment.env.id
   revision_mode                = "Single"
 
-  identity { type = "SystemAssigned" }
+  identity {
+    type = "SystemAssigned"
+  }
 
   registry {
     server   = data.azurerm_container_registry.acr.login_server
@@ -130,7 +132,11 @@ resource "azurerm_container_app" "webserver" {
   ingress {
     external_enabled = true
     target_port      = 8080
-    traffic_weight { latest_revision = true percentage = 100 }
+
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
+    }
   }
 
   template {
@@ -143,15 +149,34 @@ resource "azurerm_container_app" "webserver" {
 
       dynamic "env" {
         for_each = { for e in local.common_envs : e.name => e }
-        content { name = env.key value = env.value.value }
+        content {
+          name  = env.key
+          value = env.value.value
+        }
       }
 
-      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
-      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
+      volume_mounts {
+        name = "dags"
+        path = "/opt/airflow/dags"
+      }
+
+      volume_mounts {
+        name = "logs"
+        path = "/opt/airflow/logs"
+      }
     }
 
-    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
-    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
+    volume {
+      name         = "dags"
+      storage_name = azurerm_container_app_environment_storage.dags_env.name
+      storage_type = "AzureFile"
+    }
+
+    volume {
+      name         = "logs"
+      storage_name = azurerm_container_app_environment_storage.logs_env.name
+      storage_type = "AzureFile"
+    }
   }
 }
 
@@ -170,7 +195,9 @@ resource "azurerm_container_app" "scheduler" {
   container_app_environment_id = azurerm_container_app_environment.env.id
   revision_mode                = "Single"
 
-  identity { type = "SystemAssigned" }
+  identity {
+    type = "SystemAssigned"
+  }
 
   registry {
     server   = data.azurerm_container_registry.acr.login_server
@@ -187,15 +214,34 @@ resource "azurerm_container_app" "scheduler" {
 
       dynamic "env" {
         for_each = { for e in local.common_envs : e.name => e }
-        content { name = env.key value = env.value.value }
+        content {
+          name  = env.key
+          value = env.value.value
+        }
       }
 
-      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
-      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
+      volume_mounts {
+        name = "dags"
+        path = "/opt/airflow/dags"
+      }
+
+      volume_mounts {
+        name = "logs"
+        path = "/opt/airflow/logs"
+      }
     }
 
-    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
-    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
+    volume {
+      name         = "dags"
+      storage_name = azurerm_container_app_environment_storage.dags_env.name
+      storage_type = "AzureFile"
+    }
+
+    volume {
+      name         = "logs"
+      storage_name = azurerm_container_app_environment_storage.logs_env.name
+      storage_type = "AzureFile"
+    }
   }
 }
 
@@ -214,7 +260,9 @@ resource "azurerm_container_app" "worker" {
   container_app_environment_id = azurerm_container_app_environment.env.id
   revision_mode                = "Single"
 
-  identity { type = "SystemAssigned" }
+  identity {
+    type = "SystemAssigned"
+  }
 
   registry {
     server   = data.azurerm_container_registry.acr.login_server
@@ -234,15 +282,34 @@ resource "azurerm_container_app" "worker" {
 
       dynamic "env" {
         for_each = { for e in local.common_envs : e.name => e }
-        content { name = env.key value = env.value.value }
+        content {
+          name  = env.key
+          value = env.value.value
+        }
       }
 
-      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
-      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
+      volume_mounts {
+        name = "dags"
+        path = "/opt/airflow/dags"
+      }
+
+      volume_mounts {
+        name = "logs"
+        path = "/opt/airflow/logs"
+      }
     }
 
-    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
-    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
+    volume {
+      name         = "dags"
+      storage_name = azurerm_container_app_environment_storage.dags_env.name
+      storage_type = "AzureFile"
+    }
+
+    volume {
+      name         = "logs"
+      storage_name = azurerm_container_app_environment_storage.logs_env.name
+      storage_type = "AzureFile"
+    }
   }
 }
 
