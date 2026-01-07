@@ -102,8 +102,9 @@ resource "azurerm_user_assigned_identity" "airflow_uami" {
 # Conexões
 # ==========================
 locals {
-  sql_alchemy_conn = "postgresql+psycopg2://${var.pg_user}:${urlencode(var.pg_password)}@${var.pg_host}:${var.pg_port}/${var.pg_database}"
-  redis_url        = "rediss://:${azurerm_redis_cache.redis.primary_access_key}@${azurerm_redis_cache.redis.hostname}:6380/0"
+  airflow_sql_alchemy_conn = "postgresql+psycopg2://${var.pg_user}:${urlencode(var.pg_password)}@${var.pg_host}:${var.pg_port}/${var.pg_database}"
+  celery_db_backend = "db+postgresql://${var.pg_user}:${urlencode(var.pg_password)}@${var.pg_host}:${var.pg_port}/${var.pg_database}"
+  redis_url = "rediss://:${azurerm_redis_cache.redis.primary_access_key}@${azurerm_redis_cache.redis.hostname}:6380/0"
 }
 
 # ==========================
@@ -112,9 +113,9 @@ locals {
 locals {
   common_envs = [
     { name = "AIRFLOW__CORE__EXECUTOR", value = "CeleryExecutor" },
-    { name = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN", value = local.sql_alchemy_conn },
+    { name = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN", value = local.airflow_sql_alchemy_conn },
     { name = "AIRFLOW__CELERY__BROKER_URL", value = local.redis_url },
-    { name = "AIRFLOW__CELERY__RESULT_BACKEND", value = local.sql_alchemy_conn },
+    { name = "AIRFLOW__CELERY__RESULT_BACKEND", value = local.celery_db_backend },
     { name = "AIRFLOW__CORE__FERNET_KEY", value = var.fernet_key },
     { name = "AIRFLOW__WEBSERVER__SECRET_KEY", value = var.webserver_secret_key }
   ]
