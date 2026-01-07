@@ -28,7 +28,7 @@ resource "azurerm_container_app_environment" "env" {
 }
 
 # ==========================
-# Storage Account (DAGs e Logs)
+# Storage (DAGs / Logs)
 # ==========================
 resource "azurerm_storage_account" "sa" {
   name                     = lower(replace("${var.prefix}sa", "-", ""))
@@ -69,7 +69,7 @@ resource "azurerm_container_app_environment_storage" "logs_env" {
 }
 
 # ==========================
-# Redis Cache (para CeleryExecutor)
+# Redis (Celery)
 # ==========================
 resource "azurerm_redis_cache" "redis" {
   name                = "${var.prefix}-redis"
@@ -79,11 +79,18 @@ resource "azurerm_redis_cache" "redis" {
   family              = "C"
   sku_name            = "Basic"
   minimum_tls_version = "1.2"
-  enable_non_ssl_port = false
 }
 
 # ==========================
-# Strings de Conexão
+# ACR (existente)
+# ==========================
+data "azurerm_container_registry" "acr" {
+  name                = "acrairflowifollow"
+  resource_group_name = azurerm_resource_group.rg.name
+}
+
+# ==========================
+# Conexões
 # ==========================
 locals {
   sql_alchemy_conn = "postgresql+psycopg2://${var.pg_user}:${urlencode(var.pg_password)}@${var.pg_host}:${var.pg_port}/${var.pg_database}"
@@ -91,12 +98,11 @@ locals {
 }
 
 # ==========================
-# Variáveis de Ambiente Comuns
+# Env comuns Airflow
 # ==========================
 locals {
   common_envs = [
     { name = "AIRFLOW__CORE__EXECUTOR", value = "CeleryExecutor" },
-    { name = "AIRFLOW__CORE__SQL_ALCHEMY_CONN", value = local.sql_alchemy_conn },
     { name = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN", value = local.sql_alchemy_conn },
     { name = "AIRFLOW__CELERY__BROKER_URL", value = local.redis_url },
     { name = "AIRFLOW__CELERY__RESULT_BACKEND", value = local.sql_alchemy_conn },
@@ -106,7 +112,7 @@ locals {
 }
 
 # ==========================
-# Airflow Webserver
+# Webserver
 # ==========================
 resource "azurerm_container_app" "webserver" {
   name                         = "${var.prefix}-web"
@@ -114,18 +120,22 @@ resource "azurerm_container_app" "webserver" {
   container_app_environment_id = azurerm_container_app_environment.env.id
   revision_mode                = "Single"
 
+  identity { type = "SystemAssigned" }
+
+  registry {
+    server   = data.azurerm_container_registry.acr.login_server
+    identity = "System"
+  }
+
   ingress {
     external_enabled = true
     target_port      = 8080
-    traffic_weight {
-      latest_revision = true
-      percentage      = 100
-    }
+    traffic_weight { latest_revision = true percentage = 100 }
   }
 
   template {
     container {
-      name   = "airflow-webserver"
+      name   = "airflow-web"
       image  = var.airflow_image
       cpu    = 1.0
       memory = "2Gi"
@@ -133,39 +143,26 @@ resource "azurerm_container_app" "webserver" {
 
       dynamic "env" {
         for_each = { for e in local.common_envs : e.name => e }
-        content {
-          name  = env.key
-          value = env.value.value
-        }
+        content { name = env.key value = env.value.value }
       }
 
-      volume_mounts {
-        name = "dags"
-        path = "/opt/airflow/dags"
-      }
-
-      volume_mounts {
-        name = "logs"
-        path = "/opt/airflow/logs"
-      }
+      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
+      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
     }
 
-    volume {
-      name         = "dags"
-      storage_name = azurerm_container_app_environment_storage.dags_env.name
-      storage_type = "AzureFile"
-    }
-
-    volume {
-      name         = "logs"
-      storage_name = azurerm_container_app_environment_storage.logs_env.name
-      storage_type = "AzureFile"
-    }
+    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
+    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
   }
 }
 
+resource "azurerm_role_assignment" "web_acr_pull" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_container_app.webserver.identity[0].principal_id
+}
+
 # ==========================
-# Airflow Scheduler
+# Scheduler
 # ==========================
 resource "azurerm_container_app" "scheduler" {
   name                         = "${var.prefix}-scheduler"
@@ -173,49 +170,43 @@ resource "azurerm_container_app" "scheduler" {
   container_app_environment_id = azurerm_container_app_environment.env.id
   revision_mode                = "Single"
 
+  identity { type = "SystemAssigned" }
+
+  registry {
+    server   = data.azurerm_container_registry.acr.login_server
+    identity = "System"
+  }
+
   template {
     container {
       name   = "airflow-scheduler"
       image  = var.airflow_image
       cpu    = 1.0
       memory = "2Gi"
-      args   = ["bash", "-lc", "airflow db migrate && airflow scheduler"]
+      args   = ["bash", "-lc", "airflow scheduler"]
 
       dynamic "env" {
         for_each = { for e in local.common_envs : e.name => e }
-        content {
-          name  = env.key
-          value = env.value.value
-        }
+        content { name = env.key value = env.value.value }
       }
 
-      volume_mounts {
-        name = "dags"
-        path = "/opt/airflow/dags"
-      }
-
-      volume_mounts {
-        name = "logs"
-        path = "/opt/airflow/logs"
-      }
+      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
+      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
     }
 
-    volume {
-      name         = "dags"
-      storage_name = azurerm_container_app_environment_storage.dags_env.name
-      storage_type = "AzureFile"
-    }
-
-    volume {
-      name         = "logs"
-      storage_name = azurerm_container_app_environment_storage.logs_env.name
-      storage_type = "AzureFile"
-    }
+    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
+    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
   }
 }
 
+resource "azurerm_role_assignment" "scheduler_acr_pull" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_container_app.scheduler.identity[0].principal_id
+}
+
 # ==========================
-# Airflow Worker
+# Worker (escala fixa)
 # ==========================
 resource "azurerm_container_app" "worker" {
   name                         = "${var.prefix}-worker"
@@ -223,7 +214,17 @@ resource "azurerm_container_app" "worker" {
   container_app_environment_id = azurerm_container_app_environment.env.id
   revision_mode                = "Single"
 
+  identity { type = "SystemAssigned" }
+
+  registry {
+    server   = data.azurerm_container_registry.acr.login_server
+    identity = "System"
+  }
+
   template {
+    min_replicas = 1
+    max_replicas = 1
+
     container {
       name   = "airflow-worker"
       image  = var.airflow_image
@@ -233,33 +234,20 @@ resource "azurerm_container_app" "worker" {
 
       dynamic "env" {
         for_each = { for e in local.common_envs : e.name => e }
-        content {
-          name  = env.key
-          value = env.value.value
-        }
+        content { name = env.key value = env.value.value }
       }
 
-      volume_mounts {
-        name = "dags"
-        path = "/opt/airflow/dags"
-      }
-
-      volume_mounts {
-        name = "logs"
-        path = "/opt/airflow/logs"
-      }
+      volume_mounts { name = "dags" path = "/opt/airflow/dags" }
+      volume_mounts { name = "logs" path = "/opt/airflow/logs" }
     }
 
-    volume {
-      name         = "dags"
-      storage_name = azurerm_container_app_environment_storage.dags_env.name
-      storage_type = "AzureFile"
-    }
-
-    volume {
-      name         = "logs"
-      storage_name = azurerm_container_app_environment_storage.logs_env.name
-      storage_type = "AzureFile"
-    }
+    volume { name = "dags" storage_name = azurerm_container_app_environment_storage.dags_env.name storage_type = "AzureFile" }
+    volume { name = "logs" storage_name = azurerm_container_app_environment_storage.logs_env.name storage_type = "AzureFile" }
   }
+}
+
+resource "azurerm_role_assignment" "worker_acr_pull" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_container_app.worker.identity[0].principal_id
 }

@@ -1,4 +1,4 @@
-name: Deploy Airflow to Azure Container Apps (Terraform + ACR Image)
+name: Deploy Airflow to Azure Container Apps 
 
 on:
   push:
@@ -24,24 +24,26 @@ jobs:
       LOCATION: eastus
       ENV_NAME: env-airflow
 
-      # Backend remoto do Terraform
+      # Backend remoto Terraform
       RG_TFSTATE: rg-tfstate
       SA_TFSTATE: sttfstateifollow
       CTNR_TFSTATE: tfstate
       TFSTATE_KEY: airflow-aca.tfstate
 
-      # Azure via OIDC (Terraform azurerm provider)
+      # Azure (OIDC)
       ARM_USE_OIDC: "true"
       ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # Variáveis do Airflow / Postgres (Terraform vars)
+      # Postgres (Airflow Metadata DB)
       TF_VAR_pg_host: "sit-datawarehouse.postgres.database.azure.com"
-      TF_VAR_pg_database: "postgres"
+      TF_VAR_pg_database: "airflow"
       TF_VAR_pg_port: "5432"
       TF_VAR_pg_user: "ifw_datawarehouse_admin"
       TF_VAR_pg_password: ${{ secrets.TF_VAR_PG_PASSWORD }}
+
+      # Airflow secrets
       TF_VAR_fernet_key: ${{ secrets.TF_VAR_FERNET_KEY }}
       TF_VAR_webserver_secret_key: ${{ secrets.TF_VAR_WEBSERVER_SECRET_KEY }}
 
@@ -64,19 +66,20 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Set Azure subscription explicitly
+        run: |
+          set -euo pipefail
+          az account set --subscription "${ARM_SUBSCRIPTION_ID}"
+
       # --------------------------
-      # Build + Push imagem Airflow
+      # Build & Push imagem
       # --------------------------
       - name: Login to ACR
         run: |
           set -euo pipefail
-          if [ -z "${ACR_NAME}" ]; then
-            echo "ACR_NAME is empty. Set secrets.ACR_NAME with your ACR name (e.g. myacrprod)."
-            exit 1
-          fi
           az acr login --name "${ACR_NAME}"
 
-      - name: Build and Push Airflow Image (with Postgres provider)
+      - name: Build and Push Airflow Image
         run: |
           set -euo pipefail
 
@@ -84,27 +87,21 @@ jobs:
           ACR_LOGIN_SERVER="$(az acr show --name "${ACR_NAME}" --query loginServer -o tsv)"
           IMAGE_NAME="${ACR_LOGIN_SERVER}/airflow:${IMAGE_TAG}"
 
-          echo "Building image: ${IMAGE_NAME}"
           docker build -t "${IMAGE_NAME}" .
-
-          echo "Pushing image: ${IMAGE_NAME}"
           docker push "${IMAGE_NAME}"
 
-          echo "TF_VAR_airflow_image=${IMAGE_NAME}" >> "${GITHUB_ENV}"
+          echo "TF_VAR_airflow_image=${IMAGE_NAME}" >> $GITHUB_ENV
 
       # --------------------------
-      # Export TF_VAR base (RG/loc/env)
+      # Terraform
       # --------------------------
-      - name: Export TF_VAR_* (RG/location/env)
+      - name: Export base TF_VARs
         run: |
           set -euo pipefail
           echo "TF_VAR_rg_name=$RG_NAME" >> $GITHUB_ENV
           echo "TF_VAR_location=$LOCATION" >> $GITHUB_ENV
           echo "TF_VAR_env_name=$ENV_NAME" >> $GITHUB_ENV
 
-      # --------------------------
-      # Terraform init/plan/apply
-      # --------------------------
       - name: Terraform Init
         run: |
           set -euo pipefail
@@ -114,38 +111,11 @@ jobs:
             -backend-config="container_name=$CTNR_TFSTATE" \
             -backend-config="key=$TFSTATE_KEY"
 
-      - name: Import Resource Group if exists
-        run: |
-          set -euo pipefail
-          terraform -chdir=$TF_WORKDIR import \
-            azurerm_resource_group.rg \
-            "/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$RG_NAME" || true
-
-      - name: Import Log Analytics Workspace if exists
-        run: |
-          set -euo pipefail
-          terraform -chdir=$TF_WORKDIR import \
-            azurerm_log_analytics_workspace.law \
-            "/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$RG_NAME/providers/Microsoft.OperationalInsights/workspaces/law-$ENV_NAME" || true
-
-      - name: Import ACA Environment if exists
-        run: |
-          set -euo pipefail
-          terraform -chdir=$TF_WORKDIR import \
-            azurerm_container_app_environment.env \
-            "/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$RG_NAME/providers/Microsoft.App/managedEnvironments/$ENV_NAME" || true
-
       - name: Terraform Validate
-        run: |
-          set -euo pipefail
-          terraform -chdir=$TF_WORKDIR validate
+        run: terraform -chdir=$TF_WORKDIR validate
 
       - name: Terraform Plan
-        run: |
-          set -euo pipefail
-          terraform -chdir=$TF_WORKDIR plan -out=tfplan -lock-timeout=5m
+        run: terraform -chdir=$TF_WORKDIR plan -out=tfplan
 
       - name: Terraform Apply
-        run: |
-          set -euo pipefail
-          terraform -chdir=$TF_WORKDIR apply -auto-approve -lock-timeout=5m tfplan
+        run: terraform -chdir=$TF_WORKDIR apply -auto-approve tfplan
