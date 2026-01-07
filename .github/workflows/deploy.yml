@@ -85,14 +85,12 @@ jobs:
           IMAGE_NAME="${ACR_LOGIN_SERVER}/airflow:${IMAGE_TAG}"
 
           echo "Building image: ${IMAGE_NAME}"
-          docker build -f docker/Dockerfile -t "${IMAGE_NAME}" .
+          docker build -t "${IMAGE_NAME}" .
 
           echo "Pushing image: ${IMAGE_NAME}"
           docker push "${IMAGE_NAME}"
 
-          # Exporta para o Terraform
           echo "TF_VAR_airflow_image=${IMAGE_NAME}" >> "${GITHUB_ENV}"
-          echo "Airflow image set for Terraform: ${IMAGE_NAME}"
 
       # --------------------------
       # Export TF_VAR base (RG/loc/env)
