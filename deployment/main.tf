@@ -28,7 +28,7 @@ resource "azurerm_container_app_environment" "env" {
 }
 
 # ==========================
-# Storage (DAGs / Logs)
+# Storage Account (DAGs / Logs)
 # ==========================
 resource "azurerm_storage_account" "sa" {
   name                     = lower(replace("${var.prefix}sa", "-", ""))
@@ -69,7 +69,7 @@ resource "azurerm_container_app_environment_storage" "logs_env" {
 }
 
 # ==========================
-# Redis (Celery)
+# Redis Cache (Celery)
 # ==========================
 resource "azurerm_redis_cache" "redis" {
   name                = "${var.prefix}-redis"
@@ -87,6 +87,22 @@ resource "azurerm_redis_cache" "redis" {
 data "azurerm_container_registry" "acr" {
   name                = "acrairflowifollow"
   resource_group_name = azurerm_resource_group.rg.name
+}
+
+# ==========================
+# User Assigned Managed Identity
+# ==========================
+resource "azurerm_user_assigned_identity" "airflow_uami" {
+  name                = "${var.prefix}-airflow-uami"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+}
+
+# Permissão AcrPull (uma vez)
+resource "azurerm_role_assignment" "acr_pull" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_user_assigned_identity.airflow_uami.principal_id
 }
 
 # ==========================
@@ -112,7 +128,7 @@ locals {
 }
 
 # ==========================
-# Webserver
+# Airflow Webserver
 # ==========================
 resource "azurerm_container_app" "webserver" {
   name                         = "${var.prefix}-web"
@@ -121,12 +137,13 @@ resource "azurerm_container_app" "webserver" {
   revision_mode                = "Single"
 
   identity {
-    type = "SystemAssigned"
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.airflow_uami.id]
   }
 
   registry {
     server   = data.azurerm_container_registry.acr.login_server
-    identity = "System"
+    identity = azurerm_user_assigned_identity.airflow_uami.id
   }
 
   ingress {
@@ -180,14 +197,8 @@ resource "azurerm_container_app" "webserver" {
   }
 }
 
-resource "azurerm_role_assignment" "web_acr_pull" {
-  scope                = data.azurerm_container_registry.acr.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_container_app.webserver.identity[0].principal_id
-}
-
 # ==========================
-# Scheduler
+# Airflow Scheduler
 # ==========================
 resource "azurerm_container_app" "scheduler" {
   name                         = "${var.prefix}-scheduler"
@@ -196,12 +207,13 @@ resource "azurerm_container_app" "scheduler" {
   revision_mode                = "Single"
 
   identity {
-    type = "SystemAssigned"
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.airflow_uami.id]
   }
 
   registry {
     server   = data.azurerm_container_registry.acr.login_server
-    identity = "System"
+    identity = azurerm_user_assigned_identity.airflow_uami.id
   }
 
   template {
@@ -245,14 +257,8 @@ resource "azurerm_container_app" "scheduler" {
   }
 }
 
-resource "azurerm_role_assignment" "scheduler_acr_pull" {
-  scope                = data.azurerm_container_registry.acr.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_container_app.scheduler.identity[0].principal_id
-}
-
 # ==========================
-# Worker (escala fixa)
+# Airflow Worker (escala fixa)
 # ==========================
 resource "azurerm_container_app" "worker" {
   name                         = "${var.prefix}-worker"
@@ -261,12 +267,13 @@ resource "azurerm_container_app" "worker" {
   revision_mode                = "Single"
 
   identity {
-    type = "SystemAssigned"
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.airflow_uami.id]
   }
 
   registry {
     server   = data.azurerm_container_registry.acr.login_server
-    identity = "System"
+    identity = azurerm_user_assigned_identity.airflow_uami.id
   }
 
   template {
@@ -311,10 +318,4 @@ resource "azurerm_container_app" "worker" {
       storage_type = "AzureFile"
     }
   }
-}
-
-resource "azurerm_role_assignment" "worker_acr_pull" {
-  scope                = data.azurerm_container_registry.acr.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_container_app.worker.identity[0].principal_id
 }
