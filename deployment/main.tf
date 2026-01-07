@@ -98,13 +98,6 @@ resource "azurerm_user_assigned_identity" "airflow_uami" {
   resource_group_name = azurerm_resource_group.rg.name
 }
 
-# Permissão AcrPull (uma vez)
-resource "azurerm_role_assignment" "acr_pull" {
-  scope                = data.azurerm_container_registry.acr.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_user_assigned_identity.airflow_uami.principal_id
-}
-
 # ==========================
 # Conexões
 # ==========================
